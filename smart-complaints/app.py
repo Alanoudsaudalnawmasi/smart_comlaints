@@ -1,7 +1,9 @@
 import streamlit as st
 import random
-from rule_engine.classifier import score
-import streamlit.components.v1 as components  # مهم
+import streamlit.components.v1 as components
+
+from rule_engine.classifier import score as rule_score
+from ml_model import predict_agency
 
 # ---------------- إعداد الصفحة ----------------
 st.set_page_config(page_title="منصة تحسين البلاغات", layout="centered")
@@ -48,22 +50,51 @@ complaint_text = st.text_area("نص البلاغ", height=160)
 
 submitted = st.button("رفع البلاغ")
 
-# ---------------- معالجة البلاغ ----------------
+# ---------------- منطق المعالجة عند الضغط على الزر ----------------
 if submitted:
     if not complaint_text.strip():
         st.warning("فضلاً اكتب نص البلاغ قبل رفعه.")
     else:
-        # تشغيل محرك القواعد لتحديد الجهة
-        result = score(complaint_text)
-        agency = result.get("target_agency", "غير محددة")
+        # --- Rule-Based Result ---
+        rb_result = rule_score(complaint_text)
+        rb_agency = rb_result.get("target_agency", "غير محددة")
+
+        # --- ML Result ---
+        ml_agency, ml_label = predict_agency(complaint_text)
+
+        # --- القرار النهائي: نعتمد محرك القواعد ---
+        final_agency = rb_agency
+
+        # --- نص التوضيح ---
+        if rb_agency == ml_agency:
+            compare_note = f"""
+            <p style="font-size:16px; margin-top:12px; color:#444;">
+                <b>ملاحظة:</b>
+                نتيجة محرك القواعد ونموذج الـ ML كانت متطابقة
+                (<span style="color:#0d5c2c; font-weight:bold;">{rb_agency}</span>).
+            </p>
+            """
+        else:
+            compare_note = f"""
+            <p style="font-size:16px; margin-top:12px; color:#444;">
+                <b>ملاحظة:</b>
+                محرك القواعد اقترح:
+                <span style="color:#0d5c2c; font-weight:bold;">{rb_agency}</span><br>
+                بينما نموذج الـ ML (المبني على بيانات تدريب محدودة) اقترح:
+                <span style="color:#b8860b; font-weight:bold;">{ml_agency}</span><br>
+                لذلك تم الاعتماد في القرار النهائي على
+                <span style="font-weight:bold;">محرك القواعد</span>
+                لأنه أكثر ثباتاً مع كمية البيانات الحالية.
+            </p>
+            """
 
         # رقم عشوائي للبلاغ
         ticket_id = random.randint(100000, 999999)
 
-        # تجهيز الاسم للعرض
+        # الاسم المعروض
         display_name = name.strip() if name.strip() else "عميلنا"
 
-        # -------- رسالة النجاح كـ HTML --------
+        # --- HTML Message ---
         success_html = f"""
         <div style="
             background-color:#ffffff;
@@ -81,7 +112,7 @@ if submitted:
             <p style="font-size:18px; margin:8px 0;">
                 تم توجيه بلاغك إلى:
                 <span style="color:#b8860b; font-weight:bold;">
-                    {agency}
+                    {final_agency}
                 </span>
             </p>
 
@@ -91,11 +122,14 @@ if submitted:
                     {ticket_id}
                 </span>
             </p>
+
+            {compare_note}
         </div>
         """
 
-        # عرض HTML مباشرة كمكون
-        components.html(success_html, height=230)
+        components.html(success_html, height=360)
+
+
 
 
 

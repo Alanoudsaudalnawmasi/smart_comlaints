@@ -3,7 +3,6 @@ import json
 import re
 from pathlib import Path
 
-
 # تحميل القاموس من lexicon.json الموجود في نفس المجلد
 LEXICON_PATH = Path(__file__).with_name("lexicon.json")
 
@@ -11,21 +10,21 @@ with open(LEXICON_PATH, "r", encoding="utf-8") as f:
     LEXICON = json.load(f)
 
 
-def _normalize(text: str) -> str:
-    """تبسيط النص العربي لإزالة بعض الاختلافات في الكتابة."""
-    if not text:
+def normalize_ar(text: str) -> str:
+    """Normalize Arabic text so matching becomes more robust."""
+    if not isinstance(text, str):
         return ""
-
-    t = text.strip()
-
-    # توحيد الألف
-    t = re.sub("[إأآا]", "ا", t)
-    # توحيد الياء والألف المقصورة
-    t = re.sub("[يى]", "ي", t)
-    # إزالة التشكيل
-    t = re.sub("[ًٌٍَُِّْـ]", "", t)
-
-    return t
+    text = text.lower()
+    # إزالة أي شيء غير أرقام/حروف عربية/مسافات
+    text = re.sub(r"[^0-9\u0600-\u06FF\s]+", " ", text)
+    # توحيد بعض الحروف
+    text = text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+    text = text.replace("ى", "ي").replace("ؤ", "و").replace("ئ", "ي")
+    # أهم نقطة: تحويل ة إلى ه عشان ما نتعلق بفرق الكتابة
+    text = text.replace("ة", "ه")
+    # إزالة المسافات الزائدة
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def score(text: str) -> dict:
@@ -37,24 +36,25 @@ def score(text: str) -> dict:
     - target_agency: الجهة المقترحة
     """
 
-    t = _normalize(text)
+    # نطبّع نص البلاغ
+    t = normalize_ar(text)
 
     scores = {
         "trade": 0,
         "balady": 0,
-        "transport": 0
+        "transport": 0,
     }
 
     matches = {
         "trade": [],
         "balady": [],
-        "transport": []
+        "transport": [],
     }
 
     # دالة مساعدة لحساب التطابقات
     def count_hits(words, key):
         for kw in words:
-            kw_norm = _normalize(kw)
+            kw_norm = normalize_ar(kw)
             if kw_norm and kw_norm in t:
                 scores[key] += 1
                 matches[key].append(kw)
@@ -63,7 +63,7 @@ def score(text: str) -> dict:
     count_hits(LEXICON.get("balady", []), "balady")
     count_hits(LEXICON.get("transport", []), "transport")
 
-    # اختيار الجهة
+    # اختيار الجهة بناءً على أعلى سكور
     max_score = max(scores.values())
 
     if max_score == 0:
@@ -88,5 +88,6 @@ def score(text: str) -> dict:
         "normalized": t,
         "scores": scores,
         "matches": matches,
-        "target_agency": target_agency
+        "target_agency": target_agency,
     }
+
